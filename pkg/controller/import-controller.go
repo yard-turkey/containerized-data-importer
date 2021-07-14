@@ -780,7 +780,16 @@ func createImporterPod(log logr.Logger, client client.Client, image, verbose, pu
 		return nil, err
 	}
 
-	pod := makeImporterPodSpec(pvc.Namespace, image, verbose, pullPolicy, podEnvVar, pvc, scratchPvcName, podResourceRequirements, workloadNodePlacement, vddkImageName, priorityClassName)
+	cr, err := GetActiveCDI(client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
+	pod := makeImporterPodSpec(pvc.Namespace, image, verbose, pullPolicy, podEnvVar, pvc, scratchPvcName, podResourceRequirements, workloadNodePlacement, vddkImageName, priorityClassName, labels)
 
 	if err := client.Create(context.TODO(), pod); err != nil {
 		return nil, err
@@ -790,7 +799,7 @@ func createImporterPod(log logr.Logger, client client.Client, image, verbose, pu
 }
 
 // makeImporterPodSpec creates and return the importer pod spec based on the passed-in endpoint, secret and pvc.
-func makeImporterPodSpec(namespace, image, verbose, pullPolicy string, podEnvVar *importPodEnvVar, pvc *corev1.PersistentVolumeClaim, scratchPvcName *string, podResourceRequirements *corev1.ResourceRequirements, workloadNodePlacement *sdkapi.NodePlacement, vddkImageName *string, priorityClassName string) *corev1.Pod {
+func makeImporterPodSpec(namespace, image, verbose, pullPolicy string, podEnvVar *importPodEnvVar, pvc *corev1.PersistentVolumeClaim, scratchPvcName *string, podResourceRequirements *corev1.ResourceRequirements, workloadNodePlacement *sdkapi.NodePlacement, vddkImageName *string, priorityClassName string, labels map[string]string) *corev1.Pod {
 	// importer pod name contains the pvc name
 	podName, _ := pvc.Annotations[AnnImportPod]
 
@@ -821,6 +830,12 @@ func makeImporterPodSpec(namespace, image, verbose, pullPolicy string, podEnvVar
 		})
 	}
 
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: common.ImporterPodName,
+		common.PrometheusLabel:   "",
+	}, labels)
+
 	pod := &corev1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
@@ -832,11 +847,7 @@ func makeImporterPodSpec(namespace, image, verbose, pullPolicy string, podEnvVar
 			Annotations: map[string]string{
 				AnnCreatedBy: "yes",
 			},
-			Labels: map[string]string{
-				common.CDILabelKey:       common.CDILabelValue,
-				common.CDIComponentLabel: common.ImporterPodName,
-				common.PrometheusLabel:   "",
-			},
+			Labels: labels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         "v1",

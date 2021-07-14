@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"github.com/go-logr/logr"
@@ -15,6 +16,7 @@ import (
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/operator"
 	"kubevirt.io/containerized-data-importer/pkg/storagecapabilities"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -98,7 +100,16 @@ func (r *StorageProfileReconciler) getStorageProfile(sc *storagev1.StorageClass)
 
 	if err := r.client.Get(context.TODO(), types.NamespacedName{Name: sc.Name}, storageProfile); err != nil {
 		if k8serrors.IsNotFound(err) {
-			storageProfile, err = r.createEmptyStorageProfile(sc)
+			cr, err := GetActiveCDI(r.client)
+			if err != nil {
+				return nil, nil, err
+			}
+			if cr == nil {
+				return nil, nil, fmt.Errorf("no active CDI")
+			}
+			labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
+			storageProfile, err = r.createEmptyStorageProfile(sc, labels)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -136,8 +147,8 @@ func (r *StorageProfileReconciler) reconcileAccessModes(sc *storagev1.StorageCla
 	}
 }
 
-func (r *StorageProfileReconciler) createEmptyStorageProfile(sc *storagev1.StorageClass) (*cdiv1.StorageProfile, error) {
-	storageProfile := MakeEmptyStorageProfileSpec(sc.Name)
+func (r *StorageProfileReconciler) createEmptyStorageProfile(sc *storagev1.StorageClass, labels map[string]string) (*cdiv1.StorageProfile, error) {
+	storageProfile := MakeEmptyStorageProfileSpec(sc.Name, labels)
 	// uncachedClient is used to directly get the resource, SetOwnerRuntime requires some cluster-scoped resources
 	// normal/cached client does list resource, a cdi user might not have the rights to list cluster scope resource
 	if err := operator.SetOwnerRuntime(r.uncachedClient, storageProfile); err != nil {
@@ -147,18 +158,20 @@ func (r *StorageProfileReconciler) createEmptyStorageProfile(sc *storagev1.Stora
 }
 
 // MakeEmptyStorageProfileSpec creates StorageProfile manifest
-func MakeEmptyStorageProfileSpec(name string) *cdiv1.StorageProfile {
+func MakeEmptyStorageProfileSpec(name string, labels map[string]string) *cdiv1.StorageProfile {
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: "",
+	}, labels)
+
 	return &cdiv1.StorageProfile{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "StorageProfile",
 			APIVersion: "cdi.kubevirt.io/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				common.CDILabelKey:       common.CDILabelValue,
-				common.CDIComponentLabel: "",
-			},
+			Name:   name,
+			Labels: labels,
 		},
 	}
 }

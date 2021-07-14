@@ -29,7 +29,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"kubevirt.io/containerized-data-importer/pkg/common"
+	"kubevirt.io/containerized-data-importer/pkg/controller"
 	"kubevirt.io/containerized-data-importer/pkg/operator"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 	sdk "kubevirt.io/controller-lifecycle-operator-sdk/pkg/sdk"
 )
 
@@ -45,12 +48,21 @@ func ensureSCCExists(logger logr.Logger, c client.Client, saNamespace, saName st
 		logger.V(3).Info("No match error for SCC, must not be in openshift")
 		return nil
 	} else if errors.IsNotFound(err) {
+		cr, err := controller.GetActiveCDI(c)
+		if err != nil {
+			return err
+		}
+		if cr == nil {
+			return fmt.Errorf("no active CDI")
+		}
+		labels := util.MergeLabels(map[string]string{
+			common.CDIComponentLabel: "",
+		}, util.GetRecommendedLabels(cr, "cdi-operator"))
+
 		scc = &secv1.SecurityContextConstraints{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: sccName,
-				Labels: map[string]string{
-					"cdi.kubevirt.io": "",
-				},
+				Name:   sccName,
+				Labels: labels,
 			},
 			Priority: &[]int32{10}[0],
 			FSGroup: secv1.FSGroupStrategyOptions{

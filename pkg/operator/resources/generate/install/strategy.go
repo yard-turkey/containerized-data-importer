@@ -152,8 +152,7 @@ func (ins *Strategy) CRDs() []*v1.CustomResourceDefinition {
 	return ins.crds
 }
 
-func newInstallStrategyConfigMap(objects []runtime.Object, reqLogger logr.Logger, namespace string) (*corev1.ConfigMap, error) {
-
+func newInstallStrategyConfigMap(objects []runtime.Object, reqLogger logr.Logger, namespace string, labels map[string]string) (*corev1.ConfigMap, error) {
 	strategy, err := generateCurrentInstallStrategy(objects, reqLogger)
 	if err != nil {
 		return nil, err
@@ -163,6 +162,7 @@ func newInstallStrategyConfigMap(objects []runtime.Object, reqLogger logr.Logger
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "cdi-install-strategy",
 			Namespace: namespace,
+			Labels:    labels,
 		},
 		Data: map[string]string{
 			"manifests": string(dumpInstallStrategyToBytes(strategy)),
@@ -172,8 +172,8 @@ func newInstallStrategyConfigMap(objects []runtime.Object, reqLogger logr.Logger
 }
 
 // DumpInstallStrategyToConfigMap Dumps Install Strategy of CDI to a Config Map
-func DumpInstallStrategyToConfigMap(clientset client.Client, objects []runtime.Object, reqLogger logr.Logger, namespace string) error {
-	configMap, err := newInstallStrategyConfigMap(objects, reqLogger, namespace)
+func DumpInstallStrategyToConfigMap(clientset client.Client, objects []runtime.Object, reqLogger logr.Logger, namespace string, labels map[string]string) error {
+	configMap, err := newInstallStrategyConfigMap(objects, reqLogger, namespace, labels)
 	if err != nil {
 		return err
 	}

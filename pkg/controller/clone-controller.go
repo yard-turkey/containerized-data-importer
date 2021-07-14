@@ -31,6 +31,7 @@ import (
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/token"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 	"kubevirt.io/containerized-data-importer/pkg/util/cert/fetcher"
 	"kubevirt.io/containerized-data-importer/pkg/util/cert/generator"
 )
@@ -463,6 +464,15 @@ func (r *CloneReconciler) CreateCloneSourcePod(image, pullPolicy, clientName str
 		return nil, err
 	}
 
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
 	var sourceVolumeMode corev1.PersistentVolumeMode
 	if sourcePvc.Spec.VolumeMode != nil {
 		sourceVolumeMode = *sourcePvc.Spec.VolumeMode
@@ -470,7 +480,7 @@ func (r *CloneReconciler) CreateCloneSourcePod(image, pullPolicy, clientName str
 		sourceVolumeMode = corev1.PersistentVolumeFilesystem
 	}
 
-	pod := MakeCloneSourcePodSpec(sourceVolumeMode, image, pullPolicy, sourcePvcName, sourcePvcNamespace, ownerKey, clientKey, clientCert, serverCABundle, pvc, podResourceRequirements, workloadNodePlacement)
+	pod := MakeCloneSourcePodSpec(sourceVolumeMode, image, pullPolicy, sourcePvcName, sourcePvcNamespace, ownerKey, clientKey, clientCert, serverCABundle, pvc, podResourceRequirements, workloadNodePlacement, labels)
 
 	if err := r.client.Create(context.TODO(), pod); err != nil {
 		return nil, errors.Wrap(err, "source pod API create errored")
@@ -488,7 +498,7 @@ func createCloneSourcePodName(targetPvc *corev1.PersistentVolumeClaim) string {
 // MakeCloneSourcePodSpec creates and returns the clone source pod spec based on the target pvc.
 func MakeCloneSourcePodSpec(sourceVolumeMode corev1.PersistentVolumeMode, image, pullPolicy, sourcePvcName, sourcePvcNamespace, ownerRefAnno string,
 	clientKey, clientCert, serverCACert []byte, targetPvc *corev1.PersistentVolumeClaim, resourceRequirements *corev1.ResourceRequirements,
-	workloadNodePlacement *sdkapi.NodePlacement) *corev1.Pod {
+	workloadNodePlacement *sdkapi.NodePlacement, labels map[string]string) *corev1.Pod {
 
 	var ownerID string
 	cloneSourcePodName := targetPvc.Annotations[AnnCloneSourcePod]
@@ -502,6 +512,13 @@ func MakeCloneSourcePodSpec(sourceVolumeMode corev1.PersistentVolumeMode, image,
 			ownerID = ouid
 		}
 	}
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:       common.CDILabelValue, //filtered by the podInformer
+		common.CDIComponentLabel: common.ClonerSourcePodName,
+		// this label is used when searching for a pvc's cloner source pod.
+		CloneUniqueID:          cloneSourcePodName,
+		common.PrometheusLabel: "",
+	}, labels)
 
 	preallocationRequested, _ := targetPvc.Annotations[AnnPreallocationRequested]
 
@@ -513,13 +530,7 @@ func MakeCloneSourcePodSpec(sourceVolumeMode corev1.PersistentVolumeMode, image,
 				AnnCreatedBy: "yes",
 				AnnOwnerRef:  ownerRefAnno,
 			},
-			Labels: map[string]string{
-				common.CDILabelKey:       common.CDILabelValue, //filtered by the podInformer
-				common.CDIComponentLabel: common.ClonerSourcePodName,
-				// this label is used when searching for a pvc's cloner source pod.
-				CloneUniqueID:          cloneSourcePodName,
-				common.PrometheusLabel: "",
-			},
+			Labels: labels,
 		},
 		Spec: corev1.PodSpec{
 			SecurityContext: &corev1.PodSecurityContext{

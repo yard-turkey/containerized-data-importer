@@ -185,7 +185,7 @@ var _ = Describe("All smart clone tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("Should crate PVC if snapshot ready", func() {
+		It("Should create PVC if snapshot ready", func() {
 			dv := newCloneDataVolume("test-dv")
 			q, _ := resource.ParseQuantity("500Mi")
 			snapshot := createSnapshotVolume(dv.Name, dv.Namespace, nil)
@@ -202,9 +202,11 @@ var _ = Describe("All smart clone tests", func() {
 			_, err := reconciler.reconcileSnapshot(reconciler.log, snapshot)
 			Expect(err).ToNot(HaveOccurred())
 
+			pvc := &corev1.PersistentVolumeClaim{}
 			nn := types.NamespacedName{Namespace: dv.Namespace, Name: dv.Name}
-			err = reconciler.client.Get(context.TODO(), nn, &corev1.PersistentVolumeClaim{})
+			err = reconciler.client.Get(context.TODO(), nn, pvc)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(pvc.Labels[common.AppKubernetesComponentLabel]).To(Equal("storage"))
 
 			event := <-reconciler.recorder.(*record.FakeRecorder).Events
 			Expect(event).To(ContainSubstring("Creating PVC for smart-clone is in progress"))
@@ -225,6 +227,21 @@ func createSmartCloneReconciler(objects ...runtime.Object) *SmartCloneReconciler
 	cdiConfig.Status = cdiv1.CDIConfigStatus{
 		ScratchSpaceStorageClass: testStorageClass,
 	}
+
+	cdi := &cdiv1.CDI{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "CDI",
+			APIVersion: "cdis.cdi.kubevirt.io",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cdi",
+			Labels: map[string]string{
+				common.AppKubernetesManagedByLabel: "tests",
+				common.AppKubernetesComponentLabel: "storage",
+			},
+		},
+	}
+	objs = append(objs, cdi)
 
 	// Create a fake client to mock API calls.
 	cl := fake.NewFakeClientWithScheme(s, objs...)

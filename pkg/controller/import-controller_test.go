@@ -300,6 +300,7 @@ var _ = Describe("ImportConfig Controller reconcile loop", func() {
 		pod := &corev1.Pod{}
 		err = reconciler.client.Get(context.TODO(), types.NamespacedName{Name: "importer-testPvc1", Namespace: "default"}, pod)
 		Expect(err).ToNot(HaveOccurred())
+		Expect(pod.Labels[common.AppKubernetesPartOfLabel]).To(Equal("testing"))
 		foundEndPoint := false
 		for _, envVar := range pod.Spec.Containers[0].Env {
 			if envVar.Name == common.ImporterEndpoint {
@@ -488,6 +489,7 @@ var _ = Describe("Update PVC from POD", func() {
 		err = reconciler.client.Get(context.TODO(), types.NamespacedName{Name: "testPvc1-scratch", Namespace: "default"}, scratchPvc)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(scratchPvc.Spec.Resources).To(Equal(pvc.Spec.Resources))
+		Expect(scratchPvc.Labels[common.AppKubernetesPartOfLabel]).To(Equal("testing"))
 
 		resPvc := &corev1.PersistentVolumeClaim{}
 		err = reconciler.client.Get(context.TODO(), types.NamespacedName{Name: "testPvc1", Namespace: "default"}, resPvc)
@@ -917,7 +919,22 @@ func createImportReconciler(objects ...runtime.Object) *ImportReconciler {
 	s := scheme.Scheme
 	cdiv1.AddToScheme(s)
 
-	objs = append(objs, MakeEmptyCDICR())
+	cdi := &cdiv1.CDI{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "CDI",
+			APIVersion: "cdis.cdi.kubevirt.io",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cdi",
+			Labels: map[string]string{
+				common.AppKubernetesManagedByLabel: "tests",
+				common.AppKubernetesPartOfLabel:    "testing",
+				common.AppKubernetesVersionLabel:   "v0.0.0-tests",
+				common.AppKubernetesComponentLabel: "storage",
+			},
+		},
+	}
+	objs = append(objs, cdi)
 
 	cdiConfig := MakeEmptyCDIConfigSpec(common.ConfigName)
 	cdiConfig.Status = cdiv1.CDIConfigStatus{

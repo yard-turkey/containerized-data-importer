@@ -23,6 +23,7 @@ import (
 
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
 	"kubevirt.io/containerized-data-importer/pkg/common"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 )
 
 const (
@@ -189,6 +190,15 @@ func (r *SmartCloneReconciler) reconcileSnapshot(log logr.Logger, snapshot *snap
 		return reconcile.Result{}, err
 	}
 
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if cr == nil {
+		return reconcile.Result{}, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
 	if dataVolume == nil || dataVolume.DeletionTimestamp != nil {
 		if err := r.deleteSnapshot(log, snapshot.Namespace, snapshot.Name); err != nil {
 			return reconcile.Result{}, err
@@ -216,7 +226,7 @@ func (r *SmartCloneReconciler) reconcileSnapshot(log logr.Logger, snapshot *snap
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	newPvc, err := newPvcFromSnapshot(snapshot, targetPvcSpec)
+	newPvc, err := newPvcFromSnapshot(snapshot, targetPvcSpec, labels)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -308,7 +318,7 @@ func (r *SmartCloneReconciler) getTargetPVC(dataVolume *cdiv1.DataVolume) (*core
 	return pvc, nil
 }
 
-func newPvcFromSnapshot(snapshot *snapshotv1.VolumeSnapshot, targetPvcSpec *corev1.PersistentVolumeClaimSpec) (*corev1.PersistentVolumeClaim, error) {
+func newPvcFromSnapshot(snapshot *snapshotv1.VolumeSnapshot, targetPvcSpec *corev1.PersistentVolumeClaimSpec, labels map[string]string) (*corev1.PersistentVolumeClaim, error) {
 	restoreSize := snapshot.Status.RestoreSize
 	if restoreSize == nil {
 		return nil, fmt.Errorf("snapshot has no RestoreSize")
@@ -319,15 +329,17 @@ func newPvcFromSnapshot(snapshot *snapshotv1.VolumeSnapshot, targetPvcSpec *core
 		return nil, err
 	}
 
+	labels = util.MergeLabels(map[string]string{
+		"cdi-controller":         snapshot.Name,
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: common.SmartClonerCDILabel,
+	}, labels)
+
 	target := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      snapshot.Name,
 			Namespace: snapshot.Namespace,
-			Labels: map[string]string{
-				"cdi-controller":         snapshot.Name,
-				common.CDILabelKey:       common.CDILabelValue,
-				common.CDIComponentLabel: common.SmartClonerCDILabel,
-			},
+			Labels:    labels,
 			Annotations: map[string]string{
 				AnnSmartCloneRequest:       "true",
 				AnnRunningCondition:        string(corev1.ConditionFalse),

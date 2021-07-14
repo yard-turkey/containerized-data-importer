@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
 
+	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
+	cdiclient "kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/operator"
 	"kubevirt.io/containerized-data-importer/pkg/util"
@@ -30,10 +33,19 @@ const (
 
 func startLeaderElection(ctx context.Context, config *rest.Config, leaderFunc func()) error {
 	client := kubernetes.NewForConfigOrDie(config)
+	cdiClient := cdiclient.NewForConfigOrDie(config)
 	namespace := util.GetNamespace()
 
 	// create manually so it has CDI component label
-	err := createConfigMap(client, namespace, configMapName)
+	crList, err := cdiClient.CdiV1beta1().CDIs().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+	if len(crList.Items) != 1 {
+		return fmt.Errorf("Number of active CDI CRs != 1")
+	}
+	cdiCR := &crList.Items[0]
+	err = createConfigMap(client, cdiCR, namespace, configMapName)
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
@@ -54,14 +66,17 @@ func startLeaderElection(ctx context.Context, config *rest.Config, leaderFunc fu
 	return nil
 }
 
-func createConfigMap(client kubernetes.Interface, namespace, name string) error {
+func createConfigMap(client kubernetes.Interface, cr *cdiv1.CDI, namespace, name string) error {
+	dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+	mergedLabels := util.MergeLabels(dynamicLabels, map[string]string{
+		common.CDIComponentLabel: componentName,
+	})
+
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			Labels: map[string]string{
-				common.CDIComponentLabel: componentName,
-			},
+			Labels:    mergedLabels,
 		},
 	}
 

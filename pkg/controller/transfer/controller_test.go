@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -17,6 +18,7 @@ import (
 
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
 	"kubevirt.io/containerized-data-importer/pkg/client/clientset/versioned/scheme"
+	"kubevirt.io/containerized-data-importer/pkg/common"
 	"kubevirt.io/containerized-data-importer/pkg/controller/transfer"
 )
 
@@ -61,6 +63,24 @@ func createReconciler(objects ...client.Object) *transfer.ObjectTransferReconcil
 	for _, obj := range objects {
 		runtimeObjects = append(runtimeObjects, obj)
 	}
+
+	cdi := &cdiv1.CDI{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "CDI",
+			APIVersion: "cdis.cdi.kubevirt.io",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cdi",
+			Labels: map[string]string{
+				common.AppKubernetesManagedByLabel: "tests",
+				common.AppKubernetesPartOfLabel:    "testing",
+				common.AppKubernetesVersionLabel:   "v0.0.0-tests",
+				common.AppKubernetesComponentLabel: "storage",
+			},
+		},
+	}
+	runtimeObjects = append(runtimeObjects, cdi)
+
 	cl := fake.NewFakeClientWithScheme(s, runtimeObjects...)
 
 	return &transfer.ObjectTransferReconciler{
