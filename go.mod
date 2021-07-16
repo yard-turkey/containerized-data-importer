@@ -3,6 +3,7 @@ module kubevirt.io/containerized-data-importer
 go 1.14
 
 require (
+	cloud.google.com/go/storage v1.6.0
 	github.com/appscode/jsonpatch v0.0.0-20190108182946-7c0e3b262f30
 	github.com/aws/aws-sdk-go v1.15.77
 	github.com/containers/image/v5 v5.5.1
@@ -35,6 +36,7 @@ require (
 	github.com/ulikunitz/xz v0.5.10
 	github.com/vmware/govmomi v0.23.1
 	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
+	google.golang.org/api v0.20.0
 	gopkg.in/fsnotify.v1 v1.4.7
 	gopkg.in/square/go-jose.v2 v2.3.1
 	k8s.io/api v0.20.2

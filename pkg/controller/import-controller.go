@@ -38,6 +38,8 @@ const (
 
 	// SourceHTTP is the source type HTTP, if unspecified or invalid, it defaults to SourceHTTP
 	SourceHTTP = "http"
+	// SourceGCS is the source type Google Cloud Storage (GCS)
+	SourceGCS = "gcs"
 	// SourceS3 is the source type S3
 	SourceS3 = "s3"
 	// SourceGlance is the source type of glance
@@ -705,6 +707,7 @@ func getSource(pvc *corev1.PersistentVolumeClaim) string {
 	switch source {
 	case
 		SourceHTTP,
+		SourceGCS,
 		SourceS3,
 		SourceGlance,
 		SourceNone,
@@ -1066,6 +1069,8 @@ func makeImportEnv(podEnvVar *importPodEnvVar, uid types.UID) []corev1.EnvVar {
 		},
 	}
 	if podEnvVar.secretName != "" {
+		ignoreNonexistentKey := true
+
 		env = append(env, corev1.EnvVar{
 			Name: common.ImporterAccessKeyID,
 			ValueFrom: &corev1.EnvVarSource{
@@ -1073,7 +1078,8 @@ func makeImportEnv(podEnvVar *importPodEnvVar, uid types.UID) []corev1.EnvVar {
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: podEnvVar.secretName,
 					},
-					Key: common.KeyAccess,
+					Key:      common.KeyAccess,
+					Optional: &ignoreNonexistentKey,
 				},
 			},
 		}, corev1.EnvVar{
@@ -1083,7 +1089,19 @@ func makeImportEnv(podEnvVar *importPodEnvVar, uid types.UID) []corev1.EnvVar {
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: podEnvVar.secretName,
 					},
-					Key: common.KeySecret,
+					Key:      common.KeySecret,
+					Optional: &ignoreNonexistentKey,
+				},
+			},
+		}, corev1.EnvVar{
+			Name: common.ImporterServiceAccountKey,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: podEnvVar.secretName,
+					},
+					Key:      common.KeyServiceAccount,
+					Optional: &ignoreNonexistentKey,
 				},
 			},
 		})
