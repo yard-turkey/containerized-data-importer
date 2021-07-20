@@ -221,6 +221,7 @@ var _ = Describe("Clone controller reconcile loop", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(sourcePod).ToNot(BeNil())
 		Expect(sourcePod.GetLabels()[CloneUniqueID]).To(Equal("default-testPvc1-source-pod"))
+		Expect(sourcePod.GetLabels()[common.AppKubernetesPartOfLabel]).To(Equal("testing"))
 		By("Verifying source pod annotations passed from pvc")
 		Expect(sourcePod.GetAnnotations()[AnnPodNetwork]).To(Equal("net1"))
 		Expect(sourcePod.GetAnnotations()[AnnPodSidecarInjection]).To(Equal(AnnPodSidecarInjectionDefault))
@@ -669,7 +670,24 @@ var _ = Describe("TokenValidation", func() {
 func createCloneReconciler(objects ...runtime.Object) *CloneReconciler {
 	objs := []runtime.Object{}
 	objs = append(objs, objects...)
-	objs = append(objs, MakeEmptyCDICR())
+
+	cdi := &cdiv1.CDI{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "CDI",
+			APIVersion: "cdis.cdi.kubevirt.io",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cdi",
+			Labels: map[string]string{
+				common.AppKubernetesManagedByLabel: "tests",
+				common.AppKubernetesPartOfLabel:    "testing",
+				common.AppKubernetesVersionLabel:   "v0.0.0-tests",
+				common.AppKubernetesComponentLabel: "storage",
+			},
+		},
+	}
+	objs = append(objs, cdi)
+
 	cdiConfig := MakeEmptyCDIConfigSpec(common.ConfigName)
 	cdiConfig.Status = cdiv1.CDIConfigStatus{
 		DefaultPodResourceRequirements: createDefaultPodResourceRequirements("", "", "", ""),

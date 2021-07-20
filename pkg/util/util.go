@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 
+	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
 	"kubevirt.io/containerized-data-importer/pkg/common"
 )
 
@@ -291,4 +292,34 @@ func RoundDown(number, multiple int64) int64 {
 func RoundUp(number, multiple int64) int64 {
 	partitions := math.Ceil(float64(number) / float64(multiple))
 	return int64(partitions) * multiple
+}
+
+// MergeLabels adds source labels to destination (does not change existing ones)
+func MergeLabels(src, dest map[string]string) map[string]string {
+	if dest == nil {
+		dest = map[string]string{}
+	}
+
+	for k, v := range src {
+		dest[k] = v
+	}
+
+	return dest
+}
+
+// GetRecommendedLabels returns the recommended labels to set on CDI resources
+func GetRecommendedLabels(cr *cdiv1.CDI, controllerName string) map[string]string {
+	labels := map[string]string{
+		common.AppKubernetesManagedByLabel: controllerName,
+		common.AppKubernetesComponentLabel: "storage",
+	}
+
+	// In non-standalone installs, we fetch labels that were set on the CDI CR by the installer
+	for k, v := range cr.GetLabels() {
+		if k == common.AppKubernetesPartOfLabel || k == common.AppKubernetesVersionLabel {
+			labels[k] = v
+		}
+	}
+
+	return labels
 }

@@ -255,11 +255,13 @@ var _ = Describe("Upload controller reconcile loop", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(uploadPod.Name).To(Equal(createUploadResourceName(testPvc.Name)))
 		Expect(uploadPod.Spec.PriorityClassName).To(Equal("p0"))
+		Expect(uploadPod.Labels[common.AppKubernetesPartOfLabel]).To(Equal("testing"))
 
 		uploadService = &corev1.Service{}
 		err = reconciler.client.Get(context.TODO(), types.NamespacedName{Name: createUploadResourceName("testPvc1"), Namespace: "default"}, uploadService)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(uploadService.Name).To(Equal(createUploadResourceName(testPvc.Name)))
+		Expect(uploadService.Labels[common.AppKubernetesPartOfLabel]).To(Equal("testing"))
 	})
 })
 
@@ -508,7 +510,23 @@ var _ = Describe("Update PVC", func() {
 func createUploadReconciler(objects ...runtime.Object) *UploadReconciler {
 	objs := []runtime.Object{}
 	objs = append(objs, objects...)
-	objs = append(objs, MakeEmptyCDICR())
+
+	cdi := &cdiv1.CDI{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "CDI",
+			APIVersion: "cdis.cdi.kubevirt.io",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cdi",
+			Labels: map[string]string{
+				common.AppKubernetesManagedByLabel: "tests",
+				common.AppKubernetesPartOfLabel:    "testing",
+				common.AppKubernetesVersionLabel:   "v0.0.0-tests",
+				common.AppKubernetesComponentLabel: "storage",
+			},
+		},
+	}
+	objs = append(objs, cdi)
 	// Append empty CDIConfig object that normally is created by the reconcile loop
 	cdiConfig := MakeEmptyCDIConfigSpec(common.ConfigName)
 	cdiConfig.Status = cdiv1.CDIConfigStatus{

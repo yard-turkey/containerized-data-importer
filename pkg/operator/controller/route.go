@@ -30,6 +30,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"kubevirt.io/containerized-data-importer/pkg/common"
+	"kubevirt.io/containerized-data-importer/pkg/controller"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 )
 
 const (
@@ -59,13 +63,22 @@ func ensureUploadProxyRouteExists(logger logr.Logger, c client.Client, scheme *r
 		return fmt.Errorf("unexpected ConfigMap format, 'ca-bundle.crt' key missing")
 	}
 
+	cr, err := controller.GetActiveCDI(c)
+	if err != nil {
+		return err
+	}
+	if cr == nil {
+		return fmt.Errorf("no active CDI")
+	}
+	labels := util.MergeLabels(map[string]string{
+		common.CDIComponentLabel: "",
+	}, util.GetRecommendedLabels(cr, "cdi-operator"))
+
 	desiredRoute := &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      uploadProxyRouteName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"cdi.kubevirt.io": "",
-			},
+			Labels:    labels,
 			Annotations: map[string]string{
 				// long timeout here to make sure client conection doesn't die during qcow->raw conversion
 				"haproxy.router.openshift.io/timeout": "60m",
@@ -85,7 +98,7 @@ func ensureUploadProxyRouteExists(logger logr.Logger, c client.Client, scheme *r
 
 	currentRoute := &routev1.Route{}
 	key = client.ObjectKey{Namespace: namespace, Name: uploadProxyRouteName}
-	err := c.Get(context.TODO(), key, currentRoute)
+	err = c.Get(context.TODO(), key, currentRoute)
 	if err == nil {
 		if currentRoute.Spec.To.Kind != desiredRoute.Spec.To.Kind ||
 			currentRoute.Spec.To.Name != desiredRoute.Spec.To.Name ||

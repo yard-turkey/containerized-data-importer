@@ -24,6 +24,7 @@ import (
 	"time"
 
 	featuregates "kubevirt.io/containerized-data-importer/pkg/feature-gates"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -458,7 +459,15 @@ func (r *UploadReconciler) deleteService(namespace, serviceName string) error {
 // createUploadService creates upload service service manifest and sends to server
 func (r *UploadReconciler) createUploadService(name string, pvc *v1.PersistentVolumeClaim) (*v1.Service, error) {
 	ns := pvc.Namespace
-	service := r.makeUploadServiceSpec(name, pvc)
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+	service := r.makeUploadServiceSpec(name, pvc, labels)
 
 	if err := r.client.Create(context.TODO(), service); err != nil {
 		if k8serrors.IsAlreadyExists(err) {
@@ -474,9 +483,13 @@ func (r *UploadReconciler) createUploadService(name string, pvc *v1.PersistentVo
 }
 
 // makeUploadServiceSpec creates upload service service manifest
-func (r *UploadReconciler) makeUploadServiceSpec(name string, pvc *v1.PersistentVolumeClaim) *v1.Service {
+func (r *UploadReconciler) makeUploadServiceSpec(name string, pvc *v1.PersistentVolumeClaim, labels map[string]string) *v1.Service {
 	blockOwnerDeletion := true
 	isController := true
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: common.UploadServerCDILabel,
+	}, labels)
 	service := &v1.Service{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
@@ -488,10 +501,7 @@ func (r *UploadReconciler) makeUploadServiceSpec(name string, pvc *v1.Persistent
 			Annotations: map[string]string{
 				annCreatedByUpload: "yes",
 			},
-			Labels: map[string]string{
-				common.CDILabelKey:       common.CDILabelValue,
-				common.CDIComponentLabel: common.UploadServerCDILabel,
-			},
+			Labels: labels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         "v1",
@@ -536,7 +546,16 @@ func (r *UploadReconciler) createUploadPod(args UploadPodArgs) (*v1.Pod, error) 
 		return nil, err
 	}
 
-	pod := r.makeUploadPodSpec(args, podResourceRequirements, workloadNodePlacement)
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
+	pod := r.makeUploadPodSpec(args, podResourceRequirements, workloadNodePlacement, labels)
 
 	if err := r.client.Get(context.TODO(), types.NamespacedName{Name: args.Name, Namespace: ns}, pod); err != nil {
 		if !k8serrors.IsNotFound(err) {
@@ -644,10 +663,16 @@ func createUploadServiceNameFromPvcName(pvc string) string {
 	return naming.GetServiceNameFromResourceName(createUploadResourceName(pvc))
 }
 
-func (r *UploadReconciler) makeUploadPodSpec(args UploadPodArgs, resourceRequirements *v1.ResourceRequirements, workloadNodePlacement *sdkapi.NodePlacement) *v1.Pod {
+func (r *UploadReconciler) makeUploadPodSpec(args UploadPodArgs, resourceRequirements *v1.ResourceRequirements, workloadNodePlacement *sdkapi.NodePlacement, labels map[string]string) *v1.Pod {
 	requestImageSize, _ := getRequestedImageSize(args.PVC)
 	serviceName := naming.GetServiceNameFromResourceName(args.Name)
 	fsGroup := common.QemuSubGid
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:              common.CDILabelValue,
+		common.CDIComponentLabel:        common.UploadServerCDILabel,
+		common.UploadServerServiceLabel: serviceName,
+		common.UploadTargetLabel:        string(args.PVC.UID),
+	}, labels)
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      args.Name,
@@ -655,12 +680,7 @@ func (r *UploadReconciler) makeUploadPodSpec(args UploadPodArgs, resourceRequire
 			Annotations: map[string]string{
 				annCreatedByUpload: "yes",
 			},
-			Labels: map[string]string{
-				common.CDILabelKey:              common.CDILabelValue,
-				common.CDIComponentLabel:        common.UploadServerCDILabel,
-				common.UploadServerServiceLabel: serviceName,
-				common.UploadTargetLabel:        string(args.PVC.UID),
-			},
+			Labels: labels,
 			OwnerReferences: []metav1.OwnerReference{
 				MakePVCOwnerReference(args.PVC),
 			},

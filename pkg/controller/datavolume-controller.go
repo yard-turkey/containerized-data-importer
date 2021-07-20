@@ -630,7 +630,16 @@ func (r *DatavolumeReconciler) reconcileSmartClonePvc(log logr.Logger, datavolum
 	r.log.V(3).Info("Smart-Clone via Snapshot is available with Volume Snapshot Class",
 		"snapshotClassName", snapshotClassName)
 
-	newSnapshot := newSnapshot(datavolume, pvcName, snapshotClassName)
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if cr == nil {
+		return reconcile.Result{}, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
+	newSnapshot := newSnapshot(datavolume, pvcName, snapshotClassName, labels)
 	if err := setAnnOwnedByDataVolume(newSnapshot, datavolume); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -931,9 +940,23 @@ func (r *DatavolumeReconciler) initTransfer(log logr.Logger, dv *cdiv1.DataVolum
 			return false, err
 		}
 
+		cr, err := GetActiveCDI(r.client)
+		if err != nil {
+			return false, err
+		}
+		if cr == nil {
+			return false, fmt.Errorf("no active CDI")
+		}
+		dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+		mergedLabels := util.MergeLabels(dynamicLabels, map[string]string{
+			common.CDILabelKey:       common.CDILabelValue,
+			common.CDIComponentLabel: "",
+		})
+
 		ot = &cdiv1.ObjectTransfer{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: name,
+				Name:   name,
+				Labels: mergedLabels,
 			},
 			Spec: cdiv1.ObjectTransferSpec{
 				Source: cdiv1.TransferSource{
@@ -1132,6 +1155,19 @@ func (r *DatavolumeReconciler) createExpansionPod(pvc *corev1.PersistentVolumeCl
 		return nil, err
 	}
 
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+	mergedLabels := util.MergeLabels(dynamicLabels, map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: "cdi-expander",
+	})
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
@@ -1139,10 +1175,7 @@ func (r *DatavolumeReconciler) createExpansionPod(pvc *corev1.PersistentVolumeCl
 			Annotations: map[string]string{
 				AnnCreatedBy: "yes",
 			},
-			Labels: map[string]string{
-				common.CDILabelKey:       common.CDILabelValue,
-				common.CDIComponentLabel: "cdi-expander",
-			},
+			Labels: mergedLabels,
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -1450,14 +1483,14 @@ func (r *DatavolumeReconciler) getGlobalCloneStrategyOverride() (*cdiv1.CDIClone
 	return cr.Spec.CloneStrategyOverride, nil
 }
 
-func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotName, snapshotClassName string) *snapshotv1.VolumeSnapshot {
+func newSnapshot(dataVolume *cdiv1.DataVolume, snapshotName, snapshotClassName string, labels map[string]string) *snapshotv1.VolumeSnapshot {
 	annotations := make(map[string]string)
 	annotations[AnnSmartCloneRequest] = "true"
 	className := snapshotClassName
-	labels := map[string]string{
+	labels = util.MergeLabels(map[string]string{
 		common.CDILabelKey:       common.CDILabelValue,
 		common.CDIComponentLabel: common.SmartClonerCDILabel,
-	}
+	}, labels)
 	snapshotNamespace := dataVolume.Namespace
 	if dataVolume.Spec.Source.PVC.Namespace != "" {
 		snapshotNamespace = dataVolume.Spec.Source.PVC.Namespace
@@ -1960,9 +1993,18 @@ func buildHTTPClient() *http.Client {
 // which allows handleObject to discover the DataVolume resource
 // that 'owns' it.
 func (r *DatavolumeReconciler) newPersistentVolumeClaim(dataVolume *cdiv1.DataVolume, targetPvcSpec *corev1.PersistentVolumeClaimSpec) (*corev1.PersistentVolumeClaim, error) {
-	labels := map[string]string{
-		"app": "containerized-data-importer",
+	cr, err := GetActiveCDI(r.client)
+	if err != nil {
+		return nil, err
 	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+	mergedLabels := util.MergeLabels(dynamicLabels, map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: "",
+	})
 	annotations := make(map[string]string)
 
 	for k, v := range dataVolume.ObjectMeta.Annotations {
@@ -2044,7 +2086,7 @@ func (r *DatavolumeReconciler) newPersistentVolumeClaim(dataVolume *cdiv1.DataVo
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   dataVolume.Namespace,
 			Name:        dataVolume.Name,
-			Labels:      labels,
+			Labels:      mergedLabels,
 			Annotations: annotations,
 		},
 		Spec: *targetPvcSpec,

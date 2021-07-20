@@ -21,6 +21,15 @@ const (
 	// CDIComponentLabel can be added to all CDI resources
 	CDIComponentLabel = "cdi.kubevirt.io"
 
+	// AppKubernetesPartOfLabel is the Kubernetes recommended part-of label
+	AppKubernetesPartOfLabel = "app.kubernetes.io/part-of"
+	// AppKubernetesVersionLabel is the Kubernetes recommended version label
+	AppKubernetesVersionLabel = "app.kubernetes.io/version"
+	// AppKubernetesManagedByLabel is the Kubernetes recommended managed-by label
+	AppKubernetesManagedByLabel = "app.kubernetes.io/managed-by"
+	// AppKubernetesComponentLabel is the Kubernetes recommended component label
+	AppKubernetesComponentLabel = "app.kubernetes.io/component"
+
 	// PrometheusLabel provides the label to indicate prometheus metrics are available in the pods.
 	PrometheusLabel = "prometheus.cdi.kubevirt.io"
 	// PrometheusServiceName is the name of the prometheus service created by the operator.

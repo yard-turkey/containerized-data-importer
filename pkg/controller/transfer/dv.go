@@ -10,7 +10,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	cdiv1 "kubevirt.io/containerized-data-importer/pkg/apis/core/v1beta1"
+	"kubevirt.io/containerized-data-importer/pkg/common"
 	cdicontroller "kubevirt.io/containerized-data-importer/pkg/controller"
+
+	"kubevirt.io/containerized-data-importer/pkg/controller"
+	"kubevirt.io/containerized-data-importer/pkg/util"
 )
 
 type dataVolumeTransferHandler struct {
@@ -94,9 +98,23 @@ func (h *dataVolumeTransferHandler) ReconcileRunning(ot *cdiv1.ObjectTransfer) (
 	if !targetExists && !pvcTransferExists {
 		targetNamespace := getTransferTargetNamespace(ot)
 		targetName := getTransferTargetName(ot)
+		cr, err := controller.GetActiveCDI(h.reconciler.Client)
+		if err != nil {
+			return 0, err
+		}
+		if cr == nil {
+			return 0, fmt.Errorf("no active CDI")
+		}
+		dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+		mergedLabels := util.MergeLabels(dynamicLabels, map[string]string{
+			common.CDILabelKey:       common.CDILabelValue,
+			common.CDIComponentLabel: "",
+		})
+
 		pvcTransfer = &cdiv1.ObjectTransfer{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: pvcTransferName,
+				Name:   pvcTransferName,
+				Labels: mergedLabels,
 			},
 			Spec: cdiv1.ObjectTransferSpec{
 				Source: cdiv1.TransferSource{

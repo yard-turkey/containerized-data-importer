@@ -54,7 +54,7 @@ func createControllerResources(args *FactoryArgs) []client.Object {
 }
 
 func createControllerRoleBinding() *rbacv1.RoleBinding {
-	return utils.ResourcesBuiler.CreateRoleBinding(controllerResourceName, controllerResourceName, common.ControllerServiceAccountName, "")
+	return utils.ResourceBuilder.CreateRoleBinding(controllerResourceName, controllerResourceName, common.ControllerServiceAccountName, "")
 }
 
 func createControllerRole() *rbacv1.Role {
@@ -84,11 +84,11 @@ func createControllerRole() *rbacv1.Role {
 			},
 		},
 	}
-	return utils.ResourcesBuiler.CreateRole(controllerResourceName, rules)
+	return utils.ResourceBuilder.CreateRole(controllerResourceName, rules)
 }
 
 func createControllerServiceAccount() *corev1.ServiceAccount {
-	return utils.ResourcesBuiler.CreateServiceAccount(common.ControllerServiceAccountName)
+	return utils.ResourceBuilder.CreateServiceAccount(common.ControllerServiceAccountName)
 }
 
 func createControllerDeployment(controllerImage, importerImage, clonerImage, uploadServerImage, verbosity, pullPolicy string, infraNodePlacement *sdkapi.NodePlacement) *appsv1.Deployment {
@@ -252,13 +252,13 @@ func createInsecureRegConfigMap() *corev1.ConfigMap {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   common.InsecureRegistryConfigMap,
-			Labels: utils.ResourcesBuiler.WithCommonLabels(nil),
+			Labels: utils.ResourceBuilder.WithCommonLabels(nil),
 		},
 	}
 }
 
 func createPrometheusService() *corev1.Service {
-	service := utils.ResourcesBuiler.CreateService(prometheusServiceName, prometheusLabel, "", nil)
+	service := utils.ResourceBuilder.CreateService(prometheusServiceName, prometheusLabel, "", nil)
 	service.Spec.Ports = []corev1.ServicePort{
 		{
 			Name: "metrics",

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"regexp"
 
@@ -330,9 +331,22 @@ func (r *CDIConfigReconciler) createCDIConfig() (*cdiv1.CDIConfig, error) {
 	if err := r.uncachedClient.Get(context.TODO(), types.NamespacedName{Name: r.configName}, config); err != nil {
 		if errors.IsNotFound(err) {
 			config = MakeEmptyCDIConfigSpec(r.configName)
+
 			if err := operator.SetOwnerRuntime(r.uncachedClient, config); err != nil {
 				return nil, err
 			}
+
+			cr, err := GetActiveCDI(r.client)
+			if err != nil {
+				return nil, err
+			}
+			if cr == nil {
+				return nil, fmt.Errorf("no active CDI")
+			}
+			dynamicLabels := util.GetRecommendedLabels(cr, "cdi-controller")
+			mergedLabels := util.MergeLabels(dynamicLabels, config.GetLabels())
+			config.SetLabels(mergedLabels)
+
 			if err := r.client.Create(context.TODO(), config); err != nil {
 				if errors.IsAlreadyExists(err) {
 					config := &cdiv1.CDIConfig{}
@@ -393,7 +407,15 @@ func (r *CDIConfigReconciler) reconcileImportProxyCAConfigMap(config *cdiv1.CDIC
 		if certBytes, ok := clusterWideProxyConfigMap.Data[ClusterWideProxyConfigMapKey]; ok {
 			configMap := &v1.ConfigMap{}
 			if err := r.client.Get(context.TODO(), types.NamespacedName{Name: common.ImportProxyConfigMapName, Namespace: r.cdiNamespace}, configMap); errors.IsNotFound(err) {
-				if err := r.client.Create(context.TODO(), r.createProxyConfigMap(certBytes)); err != nil {
+				cr, err := GetActiveCDI(r.client)
+				if err != nil {
+					return err
+				}
+				if cr == nil {
+					return fmt.Errorf("no active CDI")
+				}
+				labels := util.GetRecommendedLabels(cr, "cdi-controller")
+				if err := r.client.Create(context.TODO(), r.createProxyConfigMap(certBytes, labels)); err != nil {
 					return err
 				}
 				return nil
@@ -409,11 +431,18 @@ func (r *CDIConfigReconciler) reconcileImportProxyCAConfigMap(config *cdiv1.CDIC
 	return nil
 }
 
-func (r *CDIConfigReconciler) createProxyConfigMap(certBytes string) *v1.ConfigMap {
+func (r *CDIConfigReconciler) createProxyConfigMap(certBytes string, labels map[string]string) *v1.ConfigMap {
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey:       common.CDILabelValue,
+		common.CDIComponentLabel: "",
+	}, labels)
+
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      common.ImportProxyConfigMapName,
-			Namespace: r.cdiNamespace},
+			Namespace: r.cdiNamespace,
+			Labels:    labels,
+		},
 		Data: map[string]string{common.ImportProxyConfigMapKey: certBytes},
 	}
 }

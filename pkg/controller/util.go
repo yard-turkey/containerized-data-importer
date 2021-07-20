@@ -261,10 +261,10 @@ func checkIfLabelExists(pvc *v1.PersistentVolumeClaim, lbl string, val string) b
 // newScratchPersistentVolumeClaimSpec creates a new PVC based on the size of the passed in PVC.
 // It also sets the appropriate OwnerReferences on the resource
 // which allows handleObject to discover the pod resource that 'owns' it, and clean up when needed.
-func newScratchPersistentVolumeClaimSpec(pvc *v1.PersistentVolumeClaim, pod *v1.Pod, name, storageClassName string) *v1.PersistentVolumeClaim {
-	labels := map[string]string{
-		"app": "containerized-data-importer",
-	}
+func newScratchPersistentVolumeClaimSpec(pvc *v1.PersistentVolumeClaim, pod *v1.Pod, name, storageClassName string, labels map[string]string) *v1.PersistentVolumeClaim {
+	labels = util.MergeLabels(map[string]string{
+		common.CDILabelKey: common.CDILabelValue,
+	}, labels)
 
 	annotations := make(map[string]string, 0)
 	// Copy kubevirt.io annotations, but NOT the CDI annotations as those will trigger another import/upload/clone on the scratchspace
@@ -299,7 +299,16 @@ func newScratchPersistentVolumeClaimSpec(pvc *v1.PersistentVolumeClaim, pod *v1.
 
 // CreateScratchPersistentVolumeClaim creates and returns a pointer to a scratch PVC which is created based on the passed-in pvc and storage class name.
 func CreateScratchPersistentVolumeClaim(client client.Client, pvc *v1.PersistentVolumeClaim, pod *v1.Pod, name, storageClassName string) (*v1.PersistentVolumeClaim, error) {
-	scratchPvcSpec := newScratchPersistentVolumeClaimSpec(pvc, pod, name, storageClassName)
+	cr, err := GetActiveCDI(client)
+	if err != nil {
+		return nil, err
+	}
+	if cr == nil {
+		return nil, fmt.Errorf("no active CDI")
+	}
+	labels := util.GetRecommendedLabels(cr, "cdi-controller")
+
+	scratchPvcSpec := newScratchPersistentVolumeClaimSpec(pvc, pod, name, storageClassName, labels)
 	if err := client.Create(context.TODO(), scratchPvcSpec); err != nil {
 		if !k8serrors.IsAlreadyExists(err) {
 			return nil, errors.Wrap(err, "scratch PVC API create errored")
